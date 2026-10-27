@@ -46,10 +46,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-/**
- * Normalizes telemetry payloads using purely raw sensor readings
- * without modifying or overriding confidence/impact thresholds based on status codes.
- */
 function normalizePayload(body: unknown): IngestPayload | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
 
@@ -59,7 +55,6 @@ function normalizePayload(body: unknown): IngestPayload | null {
       ? (rawRecord.lora as Record<string, unknown>)
       : {};
 
-  // Gabungkan properti dari root payload dan objek lora
   const record = { ...rawRecord, ...loraRecord };
 
   const deviceValue =
@@ -88,14 +83,12 @@ function normalizePayload(body: unknown): IngestPayload | null {
   const vibrationMs2 = numberField(record, "vibration_ms2", "vib", "vibration");
   const sourceStatus = numberField(record, "status_level", "source_status", "st", "status_code");
 
-  // Mengambil murni nilai raw confidence dari sensor tanpa override buatan
   const acousticConfidence = clamp(
     numberField(record, "acoustic_confidence", "sound_probability", "ps") ?? 0,
     0,
     1
   );
 
-  // Mengambil murni nilai getaran terukur dari sensor (atau konversi m/s^2 ke g)
   const impactG = Math.max(
     0,
     numberField(record, "impact_g") ??
@@ -181,6 +174,7 @@ export async function POST(request: Request) {
     p_impact_g: payload.impact_g,
     p_acoustic_confidence: payload.acoustic_confidence,
     p_acoustic_db: payload.acoustic_db ?? null,
+    p_status_level: payload.status_level ?? 0,
     p_raw_payload: payload.raw_payload,
   });
 

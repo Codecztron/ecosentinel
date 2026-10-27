@@ -17,13 +17,7 @@ function randomInRange(min: number, max: number): number {
 
 /**
  * A tiny in-process pub/sub that stands in for a Supabase Realtime + Postgres
- * backend during local development. It reproduces the same alert-derivation
- * thresholds as `supabase/migrations/0001_init.sql` (`handle_new_telemetry`)
- * so the demo behaves like the real system, just without a database.
- *
- * This module is only ever imported from Client Components, so it lives
- * exclusively in the browser bundle — the interval-driven simulation never
- * runs during server rendering or inside a Server Action.
+ * backend during local development.
  */
 class DemoStore {
   private nodes: MapNode[] = INITIAL_MOCK_NODES.map((node) => ({ ...node }));
@@ -91,7 +85,7 @@ class DemoStore {
   }
 
   // ---------------------------------------------------------------------
-  // Mutations (mirror src/app/actions.ts for when there's no server to hit)
+  // Mutations
   // ---------------------------------------------------------------------
 
   acknowledgeAlert(alertId: number, operatorName: string): ActionResult {
@@ -141,39 +135,42 @@ class DemoStore {
   // Simulation loop
   // ---------------------------------------------------------------------
 
-  private deriveStatus(reading: Pick<TelemetryRow, "acoustic_confidence" | "tilt_deg" | "impact_g" | "battery_pct">) {
-    if (reading.acoustic_confidence >= 0.85 || reading.tilt_deg >= 35 || reading.impact_g >= 2.5) {
+  private deriveStatus(reading: Pick<TelemetryRow, "status_level" | "battery_pct">) {
+    if (reading.status_level === 1 || reading.status_level === 3) {
       return "alert" as const;
     }
-    if (
-      reading.acoustic_confidence >= 0.55 ||
-      reading.tilt_deg >= 15 ||
-      reading.impact_g >= 1.2 ||
-      reading.battery_pct <= 15
-    ) {
+    if (reading.status_level === 2 || reading.battery_pct <= 15) {
       return "warning" as const;
     }
     return "normal" as const;
   }
 
   private maybeRaiseAlerts(node: MapNode, reading: TelemetryRow) {
+    // KUNCI UTAMA: Jika status_level bernilai 0 (Aman) atau tidak ada, JANGAN buat alert!
+    if (!reading.status_level || reading.status_level === 0) return;
+
     const raised: { alert_type: AlertType; severity: AlertSeverity; confidence: number; message: string }[] = [];
 
-    if (reading.acoustic_confidence >= 0.55) {
+    if (reading.status_level === 1) {
       raised.push({
         alert_type: "chainsaw",
-        severity: reading.acoustic_confidence >= 0.85 ? "critical" : "warning",
-        confidence: reading.acoustic_confidence,
-        message: `Chainsaw acoustic signature detected at ${Math.round(reading.acoustic_confidence * 100)}% confidence`,
+        severity: "critical",
+        confidence: Math.max(reading.acoustic_confidence || 0, 0.55),
+        message: "Terdeteksi ancaman bising gergaji mesin",
       });
-    }
-
-    if (reading.tilt_deg >= 15 || reading.impact_g >= 1.2) {
+    } else if (reading.status_level === 2) {
       raised.push({
-        alert_type: "tree_fall",
-        severity: reading.tilt_deg >= 35 || reading.impact_g >= 2.5 ? "critical" : "warning",
-        confidence: Math.min(1, Math.max(reading.tilt_deg / 45, reading.impact_g / 4)),
-        message: `Tree movement detected: tilt ${reading.tilt_deg.toFixed(1)}°, impact ${reading.impact_g.toFixed(2)}g`,
+        alert_type: "tamper",
+        severity: "warning",
+        confidence: 0.75,
+        message: "Terdeteksi getaran fisik dan gangguan jaringan pohon",
+      });
+    } else if (reading.status_level === 3) {
+      raised.push({
+        alert_type: "chainsaw",
+        severity: "critical",
+        confidence: Math.max(reading.acoustic_confidence || 0, 0.90),
+        message: "Bahaya Kritis: Konfirmasi mutlak penebangan aktif",
       });
     }
 
@@ -182,7 +179,7 @@ class DemoStore {
         alert_type: "low_battery",
         severity: "warning",
         confidence: 1,
-        message: `Battery at ${Math.round(reading.battery_pct)}% — field service required`,
+        message: `Baterai pada ${Math.round(reading.battery_pct)}% — memerlukan layanan lapangan`,
       });
     }
 
@@ -207,8 +204,6 @@ class DemoStore {
     this.alerts = [...newAlerts, ...this.alerts].slice(0, ALERT_FEED_LIMIT);
     this.notifyAlerts();
 
-    // Surface derived alerts in the console too, mirroring what an operator
-    // would see land in their logs — purely a demo-mode nicety.
     for (const alert of newAlerts) {
       console.info(`[demo] ${ALERT_TYPE_LABELS[alert.alert_type]}: ${alert.message}`);
     }
@@ -225,6 +220,9 @@ class DemoStore {
     const batteryDrain = randomInRange(0.02, 0.08);
     const nextBattery = clamp(node.battery_pct - batteryDrain, 4, 100);
 
+    // Jika isEventful, secara acak buat status_level 1 atau 2. Jika normal, status_level = 0.
+    const statusLevel = isEventful ? (Math.random() < 0.5 ? 1 : 2) : 0;
+
     const reading: TelemetryRow = {
       id: this.nextTelemetryId++,
       node_id: node.id,
@@ -240,6 +238,7 @@ class DemoStore {
       impact_g: Number((isEventful ? randomInRange(1.0, 3.2) : randomInRange(0, 0.4)).toFixed(2)),
       acoustic_confidence: Number((isEventful ? randomInRange(0.6, 0.97) : randomInRange(0, 0.12)).toFixed(3)),
       acoustic_db: Number((38 + randomInRange(0, 40)).toFixed(1)),
+      status_level: statusLevel,
       raw_payload: null,
       created_at: new Date().toISOString(),
     };
