@@ -114,6 +114,20 @@ class DemoStore {
     return { success: true };
   }
 
+  deleteAlert(alertId: number): ActionResult {
+    this.alerts = this.alerts.filter((row) => row.id !== alertId);
+    this.notifyAlerts();
+    return { success: true };
+  }
+
+  clearAlerts(): ActionResult {
+    this.alerts = [];
+    this.nodes = this.nodes.map((n) => ({ ...n, status: "normal" as const }));
+    this.notifyAlerts();
+    this.notifyNodes();
+    return { success: true };
+  }
+
   updateNodeNotes(nodeId: string, notes: string): ActionResult {
     const node = this.nodes.find((row) => row.id === nodeId);
     if (!node) return { success: false, error: "Node not found." };
