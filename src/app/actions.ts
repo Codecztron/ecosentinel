@@ -64,7 +64,10 @@ export async function updateNodeNotes(nodeId: string, notes: string): Promise<Ac
 
   const supabase = await createClient();
 
-  const { error } = await supabase.from("nodes").update({ notes }).eq("id", nodeId);
+  const { error } = await supabase
+    .from("nodes")
+    .update({ notes })
+    .eq("id", nodeId);
 
   if (error) {
     return { success: false, error: error.message };

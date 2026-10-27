@@ -11,9 +11,18 @@ import { AlertFeed } from "@/components/alerts/AlertFeed";
 import { NodeDrawer } from "@/components/node/NodeDrawer";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { AuthGate } from "@/components/auth/AuthGate";
 import type { MapNode } from "@/types/database.types";
 
 export default function DashboardPage() {
+  return (
+    <AuthGate>
+      <Dashboard />
+    </AuthGate>
+  );
+}
+
+function Dashboard() {
   const { nodes, nodesById, isLoading: nodesLoading, error: nodesError } = useRealtimeNodes();
   const { alerts, isLoading: alertsLoading, error: alertsError } = useRealtimeAlerts();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);

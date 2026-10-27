@@ -1,8 +1,5 @@
 // ============================================================================
-// Hand-authored types mirroring supabase/migrations/0001_init.sql
-// Regenerate with `supabase gen types typescript` once schema stabilizes,
-// keeping this file as the source of truth for the shapes below in the
-// meantime — every field here matches a real column, no placeholders.
+// Hand-authored types mirroring supabase/migrations/0001_init.sql.
 // ============================================================================
 
 export type NodeStatus = "normal" | "warning" | "alert" | "offline";
@@ -17,12 +14,12 @@ export type AlertType =
 
 export type AlertSeverity = "info" | "warning" | "critical";
 
-export interface NodeRow {
+export type NodeRow = {
   id: string;
   device_eui: string;
   name: string;
   forest_zone: string;
-  install_location: string; // PostGIS geography as WKT/GeoJSON string via RPC
+  install_location: string;
   current_location: string;
   status: NodeStatus;
   battery_pct: number;
@@ -34,9 +31,9 @@ export interface NodeRow {
   notes: string | null;
   created_at: string;
   updated_at: string;
-}
+};
 
-export interface TelemetryRow {
+export type TelemetryRow = {
   id: number;
   node_id: string;
   recorded_at: string;
@@ -53,9 +50,9 @@ export interface TelemetryRow {
   acoustic_db: number | null;
   raw_payload: Record<string, unknown> | null;
   created_at: string;
-}
+};
 
-export interface AlertRow {
+export type AlertRow = {
   id: number;
   node_id: string;
   telemetry_id: number | null;
@@ -69,9 +66,9 @@ export interface AlertRow {
   resolved_at: string | null;
   resolution_note: string | null;
   created_at: string;
-}
+};
 
-export interface NodeLatestTelemetryRow {
+export type NodeLatestTelemetryRow = {
   node_id: string;
   telemetry_id: number;
   recorded_at: string;
@@ -87,10 +84,10 @@ export interface NodeLatestTelemetryRow {
   acoustic_db: number | null;
   latitude: number;
   longitude: number;
-}
+};
 
-/** Row shape of the `nodes_with_coords` view — the shape the UI layer consumes. */
-export interface MapNode {
+/** Row shape of the `nodes_with_coords` view consumed by the UI. */
+export type MapNode = {
   id: string;
   device_eui: string;
   name: string;
@@ -109,35 +106,40 @@ export interface MapNode {
   longitude: number;
   install_latitude: number;
   install_longitude: number;
-}
+};
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       nodes: {
         Row: NodeRow;
         Insert: Partial<NodeRow> & Pick<NodeRow, "device_eui" | "name" | "forest_zone">;
         Update: Partial<NodeRow>;
+        Relationships: [];
       };
       telemetry: {
         Row: TelemetryRow;
         Insert: Partial<TelemetryRow> &
           Pick<TelemetryRow, "node_id" | "battery_pct" | "rssi_dbm" | "snr_db">;
         Update: Partial<TelemetryRow>;
+        Relationships: [];
       };
       alerts: {
         Row: AlertRow;
         Insert: Partial<AlertRow> &
           Pick<AlertRow, "node_id" | "alert_type" | "message" | "location">;
         Update: Partial<AlertRow>;
+        Relationships: [];
       };
     };
     Views: {
       node_latest_telemetry: {
         Row: NodeLatestTelemetryRow;
+        Relationships: [];
       };
       nodes_with_coords: {
         Row: MapNode;
+        Relationships: [];
       };
     };
     Functions: {
@@ -166,5 +168,6 @@ export interface Database {
       alert_type: AlertType;
       alert_severity: AlertSeverity;
     };
+    CompositeTypes: Record<string, never>;
   };
-}
+};

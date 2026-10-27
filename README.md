@@ -120,13 +120,78 @@ If you applied the migration via the SQL editor rather than `supabase db push`,
 double check in **Database → Replication** that `nodes`, `telemetry`, and
 `alerts` are all added to the `supabase_realtime` publication 
 
-#### 7. Run the dev server
+#### 7. Create an operator account
+
+The dashboard follows the RLS policies in the migration and requires an
+authenticated Supabase user. In **Authentication → Users**, add an operator
+with an email address and password, then use those credentials at the dashboard
+sign-in screen.
+
+#### 8. Run the dev server
 
 ```bash
 npm run dev
 ```
 
 Visit `http://localhost:3000`.
+
+## ESP32 LoRa gateway → Supabase
+
+The field gateway sketch (`gatewat_gemastik.ino`) forwards each LoRa packet to
+the deployed application's HTTPS ingest endpoint:
+
+```
+LoRa sensor node → ESP32 gateway → POST /api/ingest → Supabase → dashboard Realtime
+```
+
+The ESP32 must **not** receive `SUPABASE_SERVICE_ROLE_KEY`. It only holds the
+separate `INGEST_SHARED_SECRET`; the server validates that secret and writes to
+Supabase with the service-role key kept in its server environment.
+
+### Gateway setup
+
+1. Deploy this Next.js application to a public HTTPS domain and configure all
+   variables from `.env.local` in the deployment environment.
+2. In `gatewat_gemastik.ino`, set `WIFI_SSID`, `WIFI_PASS`, `INGEST_URL` to
+   `https://<your-domain>/api/ingest`, and `INGEST_SHARED_SECRET` to the exact
+   server value.
+3. Each LoRa node `id` must match a `nodes.device_eui` row. For a new node,
+   register it before sending telemetry:
+
+   ```sql
+   insert into public.nodes (
+     device_eui, name, forest_zone, install_location, current_location
+   ) values (
+     'NODE-001', 'Node 001', 'Zone A',
+     st_point(112.752100, -7.257500)::geography,
+     st_point(112.752100, -7.257500)::geography
+   );
+   ```
+
+4. Upload the sketch. Its serial monitor reports `Telemetry stored (201)` once
+   an uplink has been accepted.
+
+The gateway accepts the LoRa payload it already receives:
+
+```json
+{
+  "id": "NODE-001",
+  "lat": -7.2575,
+  "lon": 112.7521,
+  "st": 1,
+  "db": 82.4,
+  "vib": 2.1,
+  "mv": -0.48,
+  "ps": 0.91,
+  "pg": 0.23,
+  "pb": 0.17
+}
+```
+
+`ps` becomes chainsaw confidence, `vib` is converted from m/s² to g, and
+`st` is retained in the raw event. Status `1`, `2`, and `3` also establish the
+minimum alert level for chainsaw, disturbance, and confirmed multi-sensor
+events respectively.
 
 ## Wiring up real ESP32-S3 nodes
 
@@ -208,4 +273,3 @@ supabase/
 ## Credits
 
 **EcoSentinel** is built and maintained by **Ananta Pamungkas** for Santri lab team Universitas Jember.
-
