@@ -1,198 +1,163 @@
 "use client";
 
+import type { TelemetryRow } from "@/types/database.types";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
-  Tooltip,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
+  Tooltip,
+  CartesianGrid,
 } from "recharts";
-import type { TelemetryRow } from "@/types/database.types";
-import { formatChartTime, formatTimestamp } from "@/lib/utils";
-import { EmptyState } from "@/components/ui/EmptyState";
 
 interface TelemetryHistoryChartsProps {
   history: TelemetryRow[];
   isLoading: boolean;
 }
 
-interface ChartDatum {
-  recorded_at: string;
-  tilt_deg: number;
-  acoustic_confidence: number;
-  rssi_dbm: number;
-  snr_db: number;
-}
-
-function CustomTooltip({
-  active,
-  payload,
-  label,
-  valueLabel,
-  suffix,
-}: {
-  active?: boolean;
-  payload?: { value: number }[];
-  label?: string;
-  valueLabel: string;
-  suffix: string;
-}) {
-  if (!active || !payload || payload.length === 0 || !label) return null;
-  return (
-    <div className="rounded border border-canopy-600 bg-canopy-800 px-2.5 py-1.5 font-mono text-xs shadow-panel">
-      <p className="text-canopy-400">{formatTimestamp(label)}</p>
-      <p className="text-canopy-100">
-        {valueLabel}: {payload[0]?.value.toFixed(1)}
-        {suffix}
-      </p>
-    </div>
-  );
-}
-
-function ChartPanel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded border border-canopy-600 bg-canopy-800/60 p-3">
-      <p className="mb-2 font-mono text-[11px] uppercase tracking-wide text-canopy-300">{title}</p>
-      <div className="h-40 w-full">{children}</div>
-    </div>
-  );
-}
-
 export function TelemetryHistoryCharts({ history, isLoading }: TelemetryHistoryChartsProps) {
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 gap-3">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-48 animate-pulse rounded border border-canopy-600 bg-canopy-800/40" />
-        ))}
-      </div>
-    );
+  if (isLoading && history.length === 0) {
+    return <LoadingSpinner label="Memuat riwayat telemetri…" />;
   }
 
   if (history.length === 0) {
     return (
-      <EmptyState
-        title="No telemetry history yet"
-        description="This node hasn't reported any readings in the selected window."
-      />
+      <p className="font-mono text-xs text-canopy-400">
+        Belum ada data riwayat telemetri 6 jam terakhir.
+      </p>
     );
   }
 
-  const data: ChartDatum[] = history.map((row) => ({
-    recorded_at: row.recorded_at,
-    tilt_deg: row.tilt_deg,
-    acoustic_confidence: row.acoustic_confidence * 100,
-    rssi_dbm: row.rssi_dbm,
-    snr_db: row.snr_db,
-  }));
+  // Memetakan data riwayat dengan mengambil parameter acoustic_db, vibration, dan bio_mv
+  const chartData = [...history].reverse().map((item) => {
+    const raw = (item.raw_payload ?? {}) as Record<string, unknown>;
+    const lora = (raw.lora ?? {}) as Record<string, unknown>;
+
+    const timeLabel = new Date(item.recorded_at).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const acousticDb =
+      item.acoustic_db ??
+      (lora.db as number) ??
+      (raw.acoustic_db as number) ??
+      0;
+
+    const vibration =
+      item.vibration ??
+      item.impact_g ??
+      (lora.vib as number) ??
+      (raw.impact_g as number) ??
+      0;
+
+    const bioMv =
+      item.bio_mv ??
+      (lora.mv as number) ??
+      (raw.bio_mv as number) ??
+      0;
+
+    return {
+      timestamp: timeLabel,
+      acoustic_db: acousticDb,
+      vibration: vibration,
+      bio_mv: bioMv,
+    };
+  });
 
   return (
-    <div className="grid grid-cols-1 gap-3">
-      <ChartPanel title="Tree Tilt (degrees)">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-            <defs>
-              <linearGradient id="tiltGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#F5A623" stopOpacity={0.5} />
-                <stop offset="100%" stopColor="#F5A623" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid stroke="#262626" strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey="recorded_at"
-              tickFormatter={formatChartTime}
-              stroke="#737373"
-              tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
-              minTickGap={40}
-            />
-            <YAxis
-              stroke="#737373"
-              tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
-              width={32}
-              domain={[0, "dataMax + 5"]}
-            />
-            <Tooltip content={<CustomTooltip valueLabel="Tilt" suffix="°" />} />
-            <Area
-              type="monotone"
-              dataKey="tilt_deg"
-              stroke="#F5A623"
-              fill="url(#tiltGradient)"
-              strokeWidth={1.75}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </ChartPanel>
+    <div className="space-y-4">
+      {/* Grafik 1: Acoustic dB */}
+      <div className="rounded border border-canopy-600 bg-canopy-800/60 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="font-mono text-xs font-medium text-canopy-200">
+            Acoustic Signal (dB)
+          </span>
+          <span className="font-mono text-[10px] text-[#EE0000]">Akustik (dB)</span>
+        </div>
+        <div className="h-28 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="colorAcoustic" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#EE0000" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#EE0000" stopOpacity={0.0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
+              <XAxis dataKey="timestamp" stroke="#94A3B8" fontSize={10} tickLine={false} />
+              <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} domain={[0, "auto"]} />
+              <Tooltip
+                contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155", borderRadius: "4px", fontSize: "11px" }}
+                labelStyle={{ color: "#94A3B8" }}
+              />
+              <Area type="monotone" dataKey="acoustic_db" stroke="#EE0000" fillOpacity={1} fill="url(#colorAcoustic)" name="Acoustic (dB)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
-      <ChartPanel title="Acoustic Threat Confidence (%)">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-            <defs>
-              <linearGradient id="acousticGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#EE0000" stopOpacity={0.5} />
-                <stop offset="100%" stopColor="#EE0000" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid stroke="#262626" strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey="recorded_at"
-              tickFormatter={formatChartTime}
-              stroke="#737373"
-              tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
-              minTickGap={40}
-            />
-            <YAxis
-              stroke="#737373"
-              tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
-              width={32}
-              domain={[0, 100]}
-            />
-            <Tooltip content={<CustomTooltip valueLabel="Confidence" suffix="%" />} />
-            <Area
-              type="monotone"
-              dataKey="acoustic_confidence"
-              stroke="#EE0000"
-              fill="url(#acousticGradient)"
-              strokeWidth={1.75}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </ChartPanel>
+      {/* Grafik 2: Vibration (g) */}
+      <div className="rounded border border-canopy-600 bg-canopy-800/60 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="font-mono text-xs font-medium text-canopy-200">
+            Vibration Impact (Ms2)
+          </span>
+          <span className="font-mono text-[10px] text-[#3291FF]">Getaran (Ms2)</span>
+        </div>
+        <div className="h-28 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="colorVib" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3291FF" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#3291FF" stopOpacity={0.0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
+              <XAxis dataKey="timestamp" stroke="#94A3B8" fontSize={10} tickLine={false} />
+              <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} domain={[0, "auto"]} />
+              <Tooltip
+                contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155", borderRadius: "4px", fontSize: "11px" }}
+                labelStyle={{ color: "#94A3B8" }}
+              />
+              <Area type="monotone" dataKey="vibration" stroke="#3291FF" fillOpacity={1} fill="url(#colorVib)" name="Vibration (g)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
-      <ChartPanel title="Signal Quality (RSSI dBm)">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-            <CartesianGrid stroke="#262626" strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey="recorded_at"
-              tickFormatter={formatChartTime}
-              stroke="#737373"
-              tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
-              minTickGap={40}
-            />
-            <YAxis
-              stroke="#737373"
-              tick={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
-              width={36}
-              domain={["dataMin - 10", "dataMax + 10"]}
-            />
-            <Tooltip content={<CustomTooltip valueLabel="RSSI" suffix=" dBm" />} />
-            <Line
-              type="monotone"
-              dataKey="rssi_dbm"
-              stroke="#3291FF"
-              strokeWidth={1.75}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </ChartPanel>
+      {/* Grafik 3: Bio Potential (mV) */}
+      <div className="rounded border border-canopy-600 bg-canopy-800/60 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="font-mono text-xs font-medium text-canopy-200">
+            Bio Potential (mV)
+          </span>
+          <span className="font-mono text-[10px] text-[#F5A623]">Tegangan (mV)</span>
+        </div>
+        <div className="h-28 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="colorBio" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#F5A623" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#F5A623" stopOpacity={0.0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
+              <XAxis dataKey="timestamp" stroke="#94A3B8" fontSize={10} tickLine={false} />
+              <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} domain={[0, "auto"]} />
+              <Tooltip
+                contentStyle={{ backgroundColor: "#0F172A", borderColor: "#334155", borderRadius: "4px", fontSize: "11px" }}
+                labelStyle={{ color: "#94A3B8" }}
+              />
+              <Area type="monotone" dataKey="bio_mv" stroke="#F5A623" fillOpacity={1} fill="url(#colorBio)" name="Bio Potential (mV)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
     </div>
   );
 }

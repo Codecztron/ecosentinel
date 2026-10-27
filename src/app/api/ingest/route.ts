@@ -20,6 +20,13 @@ interface IngestPayload {
   impact_g: number;
   acoustic_confidence: number;
   acoustic_db?: number;
+  vibration?: number;
+  vibration_confidence?: number;
+  bio_mv?: number;
+  bio_confidence?: number;
+  status_level?: number;
+  gateway_id?: string;
+  gateway_packet?: number;
   raw_payload: Record<string, unknown>;
 }
 
@@ -40,14 +47,21 @@ function clamp(value: number, min: number, max: number) {
 }
 
 /**
- * Supports both the documented telemetry contract and the compact packet
- * forwarded by `gatewat_gemastik.ino`:
- * { id, lat, lon, st, db, vib, mv, ps, pg, pb }
+ * Normalizes telemetry payloads using purely raw sensor readings
+ * without modifying or overriding confidence/impact thresholds based on status codes.
  */
 function normalizePayload(body: unknown): IngestPayload | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
 
-  const record = body as Record<string, unknown>;
+  const rawRecord = body as Record<string, unknown>;
+  const loraRecord =
+    typeof rawRecord.lora === "object" && rawRecord.lora !== null && !Array.isArray(rawRecord.lora)
+      ? (rawRecord.lora as Record<string, unknown>)
+      : {};
+
+  // Gabungkan properti dari root payload dan objek lora
+  const record = { ...rawRecord, ...loraRecord };
+
   const deviceValue =
     typeof record.device_eui === "string"
       ? record.device_eui
@@ -71,43 +85,36 @@ function normalizePayload(body: unknown): IngestPayload | null {
     return null;
   }
 
-  const vibrationMs2 = numberField(record, "vibration_ms2", "vib");
-  const sourceStatus = numberField(record, "source_status", "st", "status_code");
-  let acousticConfidence = clamp(
+  const vibrationMs2 = numberField(record, "vibration_ms2", "vib", "vibration");
+  const sourceStatus = numberField(record, "status_level", "source_status", "st", "status_code");
+
+  // Mengambil murni nilai raw confidence dari sensor tanpa override buatan
+  const acousticConfidence = clamp(
     numberField(record, "acoustic_confidence", "sound_probability", "ps") ?? 0,
     0,
     1
   );
-  let impactG = Math.max(
+
+  // Mengambil murni nilai getaran terukur dari sensor (atau konversi m/s^2 ke g)
+  const impactG = Math.max(
     0,
     numberField(record, "impact_g") ??
       (vibrationMs2 === null ? 0 : Math.abs(vibrationMs2) / STANDARD_GRAVITY_MS2)
   );
 
-  // Classifier statuses: 1 = chainsaw, 2 = manual/tree disturbance,
-  // 3 = confirmed multi-sensor event. They meet DB alert thresholds while
-  // raw readings remain available in raw_payload.
-  if (sourceStatus === 1) acousticConfidence = Math.max(acousticConfidence, 0.55);
-  if (sourceStatus === 2) impactG = Math.max(impactG, 1.2);
-  if (sourceStatus === 3) {
-    acousticConfidence = Math.max(acousticConfidence, 0.85);
-    impactG = Math.max(impactG, 2.5);
-  }
-
-  const rawPayload =
-    typeof record.raw_payload === "object" && record.raw_payload !== null && !Array.isArray(record.raw_payload)
-      ? (record.raw_payload as Record<string, unknown>)
-      : record;
   const temperature = numberField(record, "temperature_c", "temperature");
   const humidity = numberField(record, "humidity_pct", "humidity");
   const acousticDb = numberField(record, "acoustic_db", "db");
+  const bioMv = numberField(record, "bio_mv", "mv");
+  const bioConfidence = numberField(record, "bio_confidence", "pb");
+  const vibrationConfidence = numberField(record, "vibration_confidence", "pg");
+  const gatewayPacket = numberField(rawRecord, "gateway_packet");
+  const gatewayId = typeof rawRecord.gateway_id === "string" ? rawRecord.gateway_id : undefined;
 
   return {
     device_eui: deviceEui,
     latitude,
     longitude,
-    // Current LoRa packet may omit radio/battery metrics. These defaults are
-    // replaced automatically when the node firmware starts supplying them.
     battery_pct: clamp(numberField(record, "battery_pct", "battery") ?? 100, 0, 100),
     rssi_dbm: Math.round(numberField(record, "rssi_dbm", "rssi") ?? -100),
     snr_db: numberField(record, "snr_db", "snr") ?? 0,
@@ -118,14 +125,17 @@ function normalizePayload(body: unknown): IngestPayload | null {
     impact_g: impactG,
     acoustic_confidence: acousticConfidence,
     acoustic_db: acousticDb === null ? undefined : acousticDb,
-    raw_payload: rawPayload,
+    vibration: vibrationMs2 === null ? undefined : vibrationMs2,
+    vibration_confidence: vibrationConfidence === null ? undefined : clamp(vibrationConfidence, 0, 1),
+    bio_mv: bioMv === null ? undefined : bioMv,
+    bio_confidence: bioConfidence === null ? undefined : clamp(bioConfidence, 0, 1),
+    status_level: sourceStatus === null ? undefined : sourceStatus,
+    gateway_id: gatewayId,
+    gateway_packet: gatewayPacket === null ? undefined : gatewayPacket,
+    raw_payload: rawRecord,
   };
 }
 
-/**
- * Authenticated ESP32 gateway ingress. The gateway sends a bearer secret;
- * the Supabase service-role key remains on this server, never on hardware.
- */
 export async function POST(request: Request) {
   if (!isSupabaseConfigured) {
     return NextResponse.json({ error: "Supabase is not configured on this deployment." }, { status: 503 });
@@ -151,7 +161,7 @@ export async function POST(request: Request) {
   const payload = normalizePayload(body);
   if (!payload) {
     return NextResponse.json(
-      { error: "Invalid payload. Required: device_eui, latitude/lat, and longitude/lon." },
+      { error: "Invalid payload. Required: device_eui (or id), latitude (or lat), and longitude (or lon)." },
       { status: 400 }
     );
   }
@@ -180,5 +190,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status });
   }
 
-  return NextResponse.json({ telemetry_id: data }, { status: 201 });
+  return NextResponse.json({ telemetry_id: data, data: payload }, { status: 201 });
 }

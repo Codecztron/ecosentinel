@@ -48,6 +48,16 @@ export type TelemetryRow = {
   impact_g: number;
   acoustic_confidence: number;
   acoustic_db: number | null;
+
+  // Field sensor & gateway tambahan
+  vibration?: number | null;
+  vibration_confidence?: number | null;
+  bio_mv?: number | null;
+  bio_confidence?: number | null;
+  status_level?: number | null;
+  gateway_id?: string | null;
+  gateway_packet?: number | null;
+
   raw_payload: Record<string, unknown> | null;
   created_at: string;
 };
@@ -82,6 +92,16 @@ export type NodeLatestTelemetryRow = {
   impact_g: number;
   acoustic_confidence: number;
   acoustic_db: number | null;
+
+  // Field sensor & gateway tambahan
+  vibration?: number | null;
+  vibration_confidence?: number | null;
+  bio_mv?: number | null;
+  bio_confidence?: number | null;
+  status_level?: number | null;
+  gateway_id?: string | null;
+  gateway_packet?: number | null;
+
   latitude: number;
   longitude: number;
 };
@@ -107,6 +127,24 @@ export type MapNode = {
   install_latitude: number;
   install_longitude: number;
 };
+
+export interface NodeTelemetry {
+  id: string;
+  node_id: string;
+  recorded_at: string;
+  acoustic_db: number;          // lora.db
+  acoustic_confidence: number;  // lora.ps
+  vibration: number;            // lora.vib
+  vibration_confidence: number; // vibration_confidence
+  bio_mv: number;               // bio_mv / lora.mv
+  bio_confidence: number;       // bio_confidence / lora.pb
+  status_level: number;         // lora.st
+  gateway_id: string;           // gateway_id
+  gateway_packet: number;       // gateway_packet
+  latitude: number;             // lora.lat
+  longitude: number;            // lora.lon
+  raw_payload?: Record<string, unknown>;
+}
 
 export type Database = {
   public: {
